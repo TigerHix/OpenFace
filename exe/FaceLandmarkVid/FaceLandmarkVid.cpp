@@ -71,116 +71,140 @@ std::vector<std::string> get_arguments(int argc, char **argv)
 	return arguments;
 }
 
-int main(int argc, char **argv)
+bool should_quit = false;
+
+extern "C"
 {
-
-	std::vector<std::string> arguments = get_arguments(argc, argv);
-
-	// no arguments: output usage
-	if (arguments.size() == 1)
-	{
-		std::cout << "For command line arguments see:" << std::endl;
-		std::cout << " https://github.com/TadasBaltrusaitis/OpenFace/wiki/Command-line-arguments";
-		return 0;
+	__declspec(dllexport) void __stdcall quit() {
+		should_quit = true;
 	}
+}
 
-	LandmarkDetector::FaceModelParameters det_parameters(arguments);
-
-	// The modules that are being used for tracking
-	LandmarkDetector::CLNF face_model(det_parameters.model_location);
-	if (!face_model.loaded_successfully)
+extern "C"
+{
+	__declspec(dllexport) int __stdcall main()
 	{
-		std::cout << "ERROR: Could not load the landmark detector" << std::endl;
-		return 1;
-	}
+		should_quit = false;
 
-	if (!face_model.eye_model)
-	{
-		std::cout << "WARNING: no eye model found" << std::endl;
-	}
+		int argcc = 3;
+		char* argvv[4];
 
-	// Open a sequence
-	Utilities::SequenceCapture sequence_reader;
+		// FaceLandmarkVid.exe Need to be changed : I hope I don't forget about it :v
+		// Device is 0 for laptop webcam, it can get 1...
 
-	// A utility for visualizing the results (show just the tracks)
-	Utilities::Visualizer visualizer(true, false, false, false);
+		argvv[0] = "C:\\OVS\\OpenFace\\x64\\Debug\\FaceLandmarkVid.exe";
+		argvv[1] = "-device";
+		argvv[2] = "0";
+		argvv[3] = NULL;
 
-	// Tracking FPS for visualization
-	Utilities::FpsTracker fps_tracker;
-	fps_tracker.AddFrame();
+		std::vector<std::string> arguments = get_arguments(argcc, argvv);
 
-	int sequence_number = 0;
-
-	while (true) // this is not a for loop as we might also be reading from a webcam
-	{
-
-		// The sequence reader chooses what to open based on command line arguments provided
-		if (!sequence_reader.Open(arguments))
-			break;
-
-		INFO_STREAM("Device or file opened");
-
-		cv::Mat rgb_image = sequence_reader.GetNextFrame();
-
-		INFO_STREAM("Starting tracking");
-		while (!rgb_image.empty()) // this is not a for loop as we might also be reading from a webcam
+		// no arguments: output usage
+		if (arguments.size() == 1)
 		{
-
-			// Reading the images
-			cv::Mat_<uchar> grayscale_image = sequence_reader.GetGrayFrame();
-
-			// The actual facial landmark detection / tracking
-			bool detection_success = LandmarkDetector::DetectLandmarksInVideo(rgb_image, face_model, det_parameters, grayscale_image);
-
-			// Gaze tracking, absolute gaze direction
-			cv::Point3f gazeDirection0(0, 0, -1);
-			cv::Point3f gazeDirection1(0, 0, -1);
-
-			// If tracking succeeded and we have an eye model, estimate gaze
-			if (detection_success && face_model.eye_model)
-			{
-				GazeAnalysis::EstimateGaze(face_model, gazeDirection0, sequence_reader.fx, sequence_reader.fy, sequence_reader.cx, sequence_reader.cy, true);
-				GazeAnalysis::EstimateGaze(face_model, gazeDirection1, sequence_reader.fx, sequence_reader.fy, sequence_reader.cx, sequence_reader.cy, false);
-			}
-
-			// Work out the pose of the head from the tracked model
-			cv::Vec6d pose_estimate = LandmarkDetector::GetPose(face_model, sequence_reader.fx, sequence_reader.fy, sequence_reader.cx, sequence_reader.cy);
-
-			// Keeping track of FPS
-			fps_tracker.AddFrame();
-
-			// Displaying the tracking visualizations
-			visualizer.SetImage(rgb_image, sequence_reader.fx, sequence_reader.fy, sequence_reader.cx, sequence_reader.cy);
-			visualizer.SetObservationLandmarks(face_model.detected_landmarks, face_model.detection_certainty, face_model.GetVisibilities());
-			visualizer.SetObservationPose(pose_estimate, face_model.detection_certainty);
-			visualizer.SetObservationGaze(gazeDirection0, gazeDirection1, LandmarkDetector::CalculateAllEyeLandmarks(face_model), LandmarkDetector::Calculate3DEyeLandmarks(face_model, sequence_reader.fx, sequence_reader.fy, sequence_reader.cx, sequence_reader.cy), face_model.detection_certainty);
-			visualizer.SetFps(fps_tracker.GetFPS());
-			// detect key presses (due to pecularities of OpenCV, you can get it when displaying images)
-			char character_press = visualizer.ShowObservation();
-
-			// restart the tracker
-			if (character_press == 'r')
-			{
-				face_model.Reset();
-			}
-			// quit the application
-			else if (character_press == 'q')
-			{
-				return(0);
-			}
-
-			// Grabbing the next frame in the sequence
-			rgb_image = sequence_reader.GetNextFrame();
-
+			std::cout << "For command line arguments see:" << std::endl;
+			std::cout << " https://github.com/TadasBaltrusaitis/OpenFace/wiki/Command-line-arguments";
+			return 0;
 		}
 
-		// Reset the model, for the next video
-		face_model.Reset();
-		sequence_reader.Close();
+		LandmarkDetector::FaceModelParameters det_parameters(arguments);
 
-		sequence_number++;
+		// The modules that are being used for tracking
+		LandmarkDetector::CLNF face_model(det_parameters.model_location);
+		if (!face_model.loaded_successfully)
+		{
+			std::cout << "ERROR: Could not load the landmark detector" << std::endl;
+			return 1;
+		}
 
+		if (!face_model.eye_model)
+		{
+			std::cout << "WARNING: no eye model found" << std::endl;
+		}
+
+		// Open a sequence
+		Utilities::SequenceCapture sequence_reader;
+
+		// A utility for visualizing the results (show just the tracks)
+		Utilities::Visualizer visualizer(true, false, false, false);
+
+		// Tracking FPS for visualization
+		Utilities::FpsTracker fps_tracker;
+		fps_tracker.AddFrame();
+
+		int sequence_number = 0;
+
+		while (true && !should_quit) // this is not a for loop as we might also be reading from a webcam
+		{
+
+			// The sequence reader chooses what to open based on command line arguments provided
+			if (!sequence_reader.Open(arguments))
+				break;
+
+			INFO_STREAM("Device or file opened");
+
+			cv::Mat rgb_image = sequence_reader.GetNextFrame();
+
+			INFO_STREAM("Starting tracking");
+			while (!rgb_image.empty() && !should_quit) // this is not a for loop as we might also be reading from a webcam
+			{
+
+				// Reading the images
+				cv::Mat_<uchar> grayscale_image = sequence_reader.GetGrayFrame();
+
+				// The actual facial landmark detection / tracking
+				bool detection_success = LandmarkDetector::DetectLandmarksInVideo(rgb_image, face_model, det_parameters, grayscale_image);
+
+				// Gaze tracking, absolute gaze direction
+				cv::Point3f gazeDirection0(0, 0, -1);
+				cv::Point3f gazeDirection1(0, 0, -1);
+
+				// If tracking succeeded and we have an eye model, estimate gaze
+				if (detection_success && face_model.eye_model)
+				{
+					GazeAnalysis::EstimateGaze(face_model, gazeDirection0, sequence_reader.fx, sequence_reader.fy, sequence_reader.cx, sequence_reader.cy, true);
+					GazeAnalysis::EstimateGaze(face_model, gazeDirection1, sequence_reader.fx, sequence_reader.fy, sequence_reader.cx, sequence_reader.cy, false);
+				}
+
+				// Work out the pose of the head from the tracked model
+				cv::Vec6d pose_estimate = LandmarkDetector::GetPose(face_model, sequence_reader.fx, sequence_reader.fy, sequence_reader.cx, sequence_reader.cy);
+
+				// Keeping track of FPS
+				fps_tracker.AddFrame();
+
+				// Displaying the tracking visualizations
+				visualizer.SetImage(rgb_image, sequence_reader.fx, sequence_reader.fy, sequence_reader.cx, sequence_reader.cy);
+				visualizer.SetObservationLandmarks(face_model.detected_landmarks, face_model.detection_certainty, face_model.GetVisibilities());
+				visualizer.SetObservationPose(pose_estimate, face_model.detection_certainty);
+				visualizer.SetObservationGaze(gazeDirection0, gazeDirection1, LandmarkDetector::CalculateAllEyeLandmarks(face_model), LandmarkDetector::Calculate3DEyeLandmarks(face_model, sequence_reader.fx, sequence_reader.fy, sequence_reader.cx, sequence_reader.cy), face_model.detection_certainty);
+				visualizer.SetFps(fps_tracker.GetFPS());
+				// detect key presses (due to pecularities of OpenCV, you can get it when displaying images)
+				char character_press = visualizer.ShowObservation();
+
+				// restart the tracker
+				if (character_press == 'r')
+				{
+					face_model.Reset();
+				}
+				// quit the application
+				else if (character_press == 'q')
+				{
+					return(0);
+				}
+
+				// Grabbing the next frame in the sequence
+				rgb_image = sequence_reader.GetNextFrame();
+
+			}
+
+			// Reset the model, for the next video
+			face_model.Reset();
+			sequence_reader.Close();
+
+			sequence_number++;
+
+		}
+		return 0;
 	}
-	return 0;
 }
 
